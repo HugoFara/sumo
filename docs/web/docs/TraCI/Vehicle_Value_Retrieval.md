@@ -467,14 +467,8 @@ value is also shown in the table.
 <tr class="odd">
 <td><p>teleporting list (0x25)</p></td>
 <td><p>stringList</p></td>
-<td><p>Returns a list of all vehicles that are currently [teleporting/jumping](Simulation/Why_Vehicles_are_teleporting.md)</p></td>
+<td><p>Returns a list of all vehicles that are currently <a href="Simulation/Why_Vehicles_are_teleporting.md">teleporting/jumping</a></p></td>
 <td><p><a href="https://sumo.dlr.de/pydoc/traci._vehicle.html#VehicleDomain-getTeleportingIDList">getTeleportingIDList</a></p></td>
-</tr>
-<tr class="even">
-<td></td>
-<td></td>
-<td></td>
-<td></td>
 </tr>
 </tbody>
 </table>
