@@ -262,7 +262,7 @@ and define only the file *example.src.xml* as follows:
 
 ```
 <edgedata>
-  <interval begin="0" end="10"/>
+  <interval begin="0" end="10">
     <edge id="a" value="0.5"/>
     <edge id="b" value="0.5"/>
   </interval>
