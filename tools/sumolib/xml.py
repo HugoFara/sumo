@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-# Copyright (C) 2011-2022 German Aerospace Center (DLR) and others.
+# Copyright (C) 2011-2023 German Aerospace Center (DLR) and others.
 # This program and the accompanying materials are made available under the
 # terms of the Eclipse Public License 2.0 which is available at
 # https://www.eclipse.org/legal/epl-2.0/
@@ -259,8 +259,15 @@ def parselines(xmlline, element_name, element_attrs=None, attr_conversions=None,
             yield x
 
 
+def _handle_namespace(tag, ignoreXmlns):
+    if ignoreXmlns and "}" in tag:
+        # see https://bugs.python.org/issue18304
+        return tag.split("}")[1]
+    return tag
+
+
 def parse(xmlfile, element_names, element_attrs=None, attr_conversions=None,
-          heterogeneous=True, warn=False):
+          heterogeneous=True, warn=False, ignoreXmlns=False):
     """
     Parses the given element_names from xmlfile and yield compound objects for
     their xml subtrees (no extra objects are returned if element_names appear in
@@ -293,10 +300,12 @@ def parse(xmlfile, element_names, element_attrs=None, attr_conversions=None,
     element_types = {}
     kwargs = {'parser': ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))} if supports_comments() else {}
     for _, parsenode in ET.iterparse(_open(xmlfile, None), **kwargs):
-        if parsenode.tag in element_names:
+        tag = _handle_namespace(parsenode.tag, ignoreXmlns)
+        if tag in element_names:
             yield _get_compound_object(parsenode, element_types,
-                                       parsenode.tag, element_attrs,
-                                       attr_conversions, heterogeneous, warn)
+                                       tag, element_attrs,
+                                       attr_conversions, heterogeneous, warn,
+                                       ignoreXmlns)
             parsenode.clear()
 
 
@@ -304,7 +313,8 @@ def _IDENTITY(x):
     return x
 
 
-def _get_compound_object(node, element_types, element_name, element_attrs, attr_conversions, heterogeneous, warn):
+def _get_compound_object(node, element_types, element_name, element_attrs, attr_conversions,
+                         heterogeneous, warn, ignoreXmlns):
     if element_name not in element_types or heterogeneous:
         # initialized the compound_object type from the first encountered #
         # element
@@ -319,8 +329,10 @@ def _get_compound_object(node, element_types, element_name, element_attrs, attr_
     child_list = []
     if len(node) > 0:
         for c in node:
-            child = _get_compound_object(c, element_types, c.tag, element_attrs, attr_conversions, heterogeneous, warn)
-            child_dict.setdefault(c.tag, []).append(child)
+            tag = _handle_namespace(c.tag, ignoreXmlns)
+            child = _get_compound_object(c, element_types, tag, element_attrs, attr_conversions,
+                                         heterogeneous, warn, ignoreXmlns)
+            child_dict.setdefault(tag, []).append(child)
             child_list.append(child)
     attrnames = element_types[element_name]._original_fields
     return element_types[element_name](
@@ -351,6 +363,30 @@ def average(elements, attrname):
         return sum(elements, attrname) / len(elements)
     else:
         raise Exception("average of 0 elements is not defined")
+        
+        
+def _createRecord(element_name, attrnames, warn, optional, extra=None):
+    if isinstance(attrnames, str):
+        attrnames = [attrnames]
+    prefixedAttrnames = [_prefix_keyword(a, warn) for a in attrnames]
+    if extra is not None:
+        prefixedAttrnames += [_prefix_keyword(a, warn) for a in extra]
+    Record = namedtuple(_prefix_keyword(element_name, warn), prefixedAttrnames)
+    return Record
+
+
+def _createPattern(element_name, attrnames, warn, optional, extra=None):
+    if isinstance(attrnames, str):
+        attrnames = [attrnames]
+    prefixedAttrnames = [_prefix_keyword(a, warn) for a in attrnames]
+    if optional:
+        pattern = ''.join(['<%s' % element_name] +
+                          ['(\\s+%s="(?P<%s>[^"]*?)")?' % a for a in zip(attrnames, prefixedAttrnames)])
+    else:
+        pattern = '.*'.join(['<%s' % element_name] +
+                            ['%s="([^"]*)"' % attr for attr in attrnames])
+    reprog = re.compile(pattern)
+    return reprog
 
 
 def _createRecordAndPattern(element_name, attrnames, warn, optional, extra=None):
@@ -402,20 +438,20 @@ def parse_fast(xmlfile, element_name, attrnames, warn=False, optional=False, enc
     """
     Parses the given attrnames from all elements with element_name
     @Note: The element must be on its own line and the attributes must appear in
-    the given order.
+    the given order. If you set "optional", missing attributes will be set to None.
+    Make sure that you list all (potential) attributes (even the ones you are not interested in)
+    in this case. You can only leave out attributes at the end.
     @Example: parse_fast('plain.edg.xml', 'edge', ['id', 'speed'])
     """
-    Record, reprog = _createRecordAndPattern(element_name, attrnames, warn, optional)
-    with _open(xmlfile, encoding) as xml_in:
-        for line in _comment_filter(xml_in):
-            m = reprog.search(line)
-            if m:
-                if optional:
-                    yield Record(**m.groupdict())
-                else:
-                    yield Record(*m.groups())
+    Record = _createRecord(element_name, attrnames, warn, optional)
+    
+    tree = ET.parse(xmlfile)
+    root = tree.getroot()
+    
+    for elem in root.iter(element_name):
+        yield Record(*[elem.get(key) for key in attr_list])
 
-
+        
 def parse_fast_nested(xmlfile, element_name, attrnames, element_name2, attrnames2,
                       warn=False, optional=False, encoding="utf8"):
     """
